@@ -217,7 +217,7 @@ def reduce_night(actionid, reference_path, output_path, config, action_frame_pat
     frames = sorted(glob.glob(frame_glob))
 
     if len(frames) == 0:
-        print('No frames found for action {0}'.format(action_id))
+        print('No frames found for action {0}'.format(actionid))
         return
 
     # pylint: disable=no-member

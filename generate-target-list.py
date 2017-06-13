@@ -35,8 +35,9 @@ import os
 import sys
 import sep
 import astropy.io.fits as fits
+import astropy.table as table
 import astropy.time as time
-from astropy.table import Table
+import astropy.wcs as wcs
 
 class ProgressNotifier:
     """Helper class for managing status output in realtime to either a tty or log file"""
@@ -266,13 +267,16 @@ def generate_target_list(input_paths, output_path, score_threshold, grid_size, m
     with fits.open(os.path.join(reference_frame_path, reference_name)) as reference:
         reference_image = reference[0].data.astype(np.float64)
         field = reference[0].header['FIELD']
+        wcs_tiles = [(r.header, wcs.WCS(r)) for r in reference[4:20]]
+
     # pylint: enable=no-member
 
-    targets_table = Table(names=('id', 'x', 'y', 'reference_flux'), dtype=('i4', 'f8', 'f8', 'f8'))
-    action_targets_table = Table(names=('id', 'action', 'x', 'y', 'bin_x1', 'bin_x2',
-                                        'bin_y1', 'bin_y2', 'score'),
-                                 dtype=('i4', 'i4', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8'))
-    action_night_table = Table(names=('action', 'night', 'mjd'), dtype=('i4', 'i4', 'f8'))
+    targets_table = table.Table(names=('id', 'x', 'y', 'reference_flux'),
+                                dtype=('i4', 'f8', 'f8', 'f8'))
+    action_targets_table = table.Table(names=('id', 'action', 'x', 'y', 'bin_x1', 'bin_x2',
+                                              'bin_y1', 'bin_y2', 'score'),
+                                       dtype=('i4', 'i4', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8', 'f8'))
+    action_night_table = table.Table(names=('action', 'night', 'mjd'), dtype=('i4', 'i4', 'f8'))
 
     total_input = len(input_paths)
 
@@ -304,6 +308,19 @@ def generate_target_list(input_paths, output_path, score_threshold, grid_size, m
                                                   reference_aperture_radius, gain=1.0)
 
             if len(nearby_targets) == 0:
+                x = t['median_x']
+                y = t['median_y']
+                ra = 0
+                dec = 0
+                for tile in wcs_tiles:
+                    if x < tile[0]['X1'] or x >= tile[0]['X2']:
+                        continue
+
+                    if y < tile[0]['Y1'] or y >= tile[0]['Y2']:
+                        continue
+
+                    ra, dec = tile[1].all_pix2world(x - tile[0]['X1'], y - tile[0]['Y1'], 0, ra_dec_order=True)
+                    print(ra, dec)
                 targets_table.add_row((target_id, t['median_x'], t['median_y'], reference_flux))
             else:
                 # TODO: It would be more correct to set based on nearest, not first
@@ -330,7 +347,7 @@ def generate_target_list(input_paths, output_path, score_threshold, grid_size, m
         fits.table_to_hdu(action_night_table)
     ]
 
-    fits.HDUList(hdus).writeto(output_path, overwrite=True)
+    fits.HDUList(hdus).writeto(output_path, clobber=True)
     print('Completed in {}'.format(datetime.datetime.utcnow() - start_time))
 
 if __name__ == "__main__":
